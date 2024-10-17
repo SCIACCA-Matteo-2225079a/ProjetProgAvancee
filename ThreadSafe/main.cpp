@@ -12,124 +12,124 @@ using namespace std;
 
 // Mutex et condition variables pour la synchronisation
 mutex mtx;
-condition_variable barber_cv;   // Pour signaler le barbier
-condition_variable customer_cv;  // Pour signaler le client
+condition_variable employe_cv;   // Pour signaler le barbier
+condition_variable voiture_cv;  // Pour signaler le client
 
 // Indicateurs pour gérer l'état du barbier et des clients
-bool barberSleeping = true; // État du barbier (dormant ou éveillé)
-queue<int> waitingCustomers; // File d'attente pour les clients
-bool customerDone = false;   // Indique si le client a terminé
-int currentCustomerId = -1;  // Identifiant du client en cours
-vector<int> servedCustomers;  // Vecteur pour garder une trace des clients déjà servis
-const int maxCustomers = 6;   // Maximum de clients dans le barbershop
+bool employeSleeping = true; // État du barbier (dormant ou éveillé)
+queue<int> waitingVoitures; // File d'attente pour les clients
+bool voitureDone = false;   // Indique si le client a terminé
+int currentVoitureId = -1;  // Identifiant du client en cours
+vector<int> servedVoitures;  // Vecteur pour garder une trace des clients déjà servis
+const int maxVoitures = 6;   // Maximum de clients dans le employeshop
 
 void balk(int id){
     cout << "Client " << id << " ne peut pas entrer, salon plein (balk)." << endl;
 }
 
-void wakeUpBarber(int id){
+void wakeUpEmploye(int id){
     cout << "Client " << id << " réveille le barbier." << endl;
 }
 
-void sleepBarber(){
+void sleepEmploye(){
     cout << "Le barbier s'endort car il n'y a plus de clients." << endl;
 
 }
 
-void barber() {
+void employe() {
     while (true) {
         unique_lock<mutex> lock(mtx);
 
         // Attendre qu'il y ait des clients dans la file d'attente
-        barber_cv.wait(lock, [] { return !waitingCustomers.empty(); });
+        employe_cv.wait(lock, [] { return !waitingVoitures.empty(); });
 
         // Le barbier est réveillé et peut couper les cheveux
-        currentCustomerId = waitingCustomers.front(); // Prendre le client en tête de la queue
-        waitingCustomers.pop(); // Retirer le client de la file d'attente
+        currentVoitureId = waitingVoitures.front(); // Prendre le client en tête de la queue
+        waitingVoitures.pop(); // Retirer le client de la file d'attente
 
-        cout << "Le barbier dit au client " << currentCustomerId << " de s'installer pour la coupe." << endl;
+        cout << "Le barbier dit au client " << currentVoitureId << " de s'installer pour la coupe." << endl;
 
         // Signaler au client qu'il peut se faire couper les cheveux
-        customer_cv.notify_one();
+        voiture_cv.notify_one();
 
-        cout << "Le barbier commence à couper les cheveux pour le client " << currentCustomerId << "." << endl;
+        cout << "Le barbier commence à couper les cheveux pour le client " << currentVoitureId << "." << endl;
         this_thread::sleep_for(chrono::seconds(2)); // Simuler le temps de coupe
 
-        cout << "Le barbier a terminé de couper les cheveux pour le client " << currentCustomerId << "." << endl;
+        cout << "Le barbier a terminé de couper les cheveux pour le client " << currentVoitureId << "." << endl;
 
         // Indiquer que le client peut partir
-        customerDone = true;
-        cout << "Le barbier dit au client " << currentCustomerId << " de partir." << endl;
+        voitureDone = true;
+        cout << "Le barbier dit au client " << currentVoitureId << " de partir." << endl;
 
         // Réinitialiser l'indicateur pour indiquer que la coupe est finie
-        customerDone = false;
+        voitureDone = false;
 
-        if (waitingCustomers.empty()) {
-            barberSleeping = true;
-            sleepBarber();
+        if (waitingVoitures.empty()) {
+            employeSleeping = true;
+            sleepEmploye();
         }
 
         // Signaler au client que la coupe est terminée
-        customer_cv.notify_all();
+        voiture_cv.notify_all();
     }
 }
 
-void customer(int id) {
+void voiture(int id) {
     {
         lock_guard<mutex> lock(mtx);
 
-        if (waitingCustomers.size() >= maxCustomers) {
+        if (waitingVoitures.size() >= maxVoitures) {
             balk(id);
             return;
         }
 
         cout << "Client " << id << " entre dans le salon." << endl;
 
-        waitingCustomers.push(id); // Ajouter le client à la file
+        waitingVoitures.push(id); // Ajouter le client à la file
 
         // Réveiller le barbier
-        if (barberSleeping) {
-            wakeUpBarber(id);
-            barberSleeping = false;
-            barber_cv.notify_one(); // Signaler le barbier qu'il y a un client
+        if (employeSleeping) {
+            wakeUpEmploye(id);
+            employeSleeping = false;
+            employe_cv.notify_one(); // Signaler le barbier qu'il y a un client
         }
     }
 
     // Attendre que le barbier lui dise de s'installer pour la coupe
     {
         unique_lock<mutex> lock(mtx);
-        while (currentCustomerId != id) {
-            customer_cv.wait(lock); // Attendre que le barbier lui signale de s'installer
+        while (currentVoitureId != id) {
+            voiture_cv.wait(lock); // Attendre que le barbier lui signale de s'installer
         }
     }
 
     // Attendre que le barbier termine la coupe
     {
         unique_lock<mutex> lock(mtx);
-        while (!customerDone) {
-            customer_cv.wait(lock); // Attendre que le barbier signale que la coupe est terminée
+        while (!voitureDone) {
+            voiture_cv.wait(lock); // Attendre que le barbier signale que la coupe est terminée
         }
     }
 
-    servedCustomers.push_back(id);
+    servedVoitures.push_back(id);
     //cout << "Client " << id << " quitte le salon." << endl;
 }
 
 int main() {
 
-    thread barberThread(barber);
+    thread employeThread(employe);
 
 
     random_device rd;
     mt19937 gen(rd());
     uniform_int_distribution<> dis(1, 3);
 
-    int customerId = 1;
+    int voitureId = 1;
     while (true) {
         for (int i = 0; i < 3; ++i) { // Simule 3 clients entrant presque en même temps
-            thread customerThread(customer, customerId);
-            customerThread.detach();
-            customerId++;
+            thread voitureThread(voiture, voitureId);
+            voitureThread.detach();
+            voitureId++;
         }
 
         this_thread::sleep_for(chrono::seconds(dis(gen))); // Attendre un temps aléatoire avant d'ajouter le prochain groupe de clients
