@@ -23,6 +23,19 @@ int currentCustomerId = -1;  // Identifiant du client en cours
 vector<int> servedCustomers;  // Vecteur pour garder une trace des clients déjà servis
 const int maxCustomers = 6;   // Maximum de clients dans le barbershop
 
+void balk(int id){
+    cout << "Client " << id << " ne peut pas entrer, salon plein (balk)." << endl;
+}
+
+void wakeUpBarber(int id){
+    cout << "Client " << id << " réveille le barbier." << endl;
+}
+
+void sleepBarber(){
+    cout << "Le barbier s'endort car il n'y a plus de clients." << endl;
+
+}
+
 void barber() {
     while (true) {
         unique_lock<mutex> lock(mtx);
@@ -53,7 +66,7 @@ void barber() {
 
         if (waitingCustomers.empty()) {
             barberSleeping = true;
-            cout << "Le barbier s'endort car il n'y a plus de clients." << endl;
+            sleepBarber();
         }
 
         // Signaler au client que la coupe est terminée
@@ -66,7 +79,7 @@ void customer(int id) {
         lock_guard<mutex> lock(mtx);
 
         if (waitingCustomers.size() >= maxCustomers) {
-            cout << "Client " << id << " ne peut pas entrer, salon plein (balk)." << endl;
+            balk(id);
             return;
         }
 
@@ -76,7 +89,7 @@ void customer(int id) {
 
         // Réveiller le barbier
         if (barberSleeping) {
-            cout << "Client " << id << " réveille le barbier." << endl;
+            wakeUpBarber(id);
             barberSleeping = false;
             barber_cv.notify_one(); // Signaler le barbier qu'il y a un client
         }
@@ -99,7 +112,7 @@ void customer(int id) {
     }
 
     servedCustomers.push_back(id);
-    cout << "Client " << id << " quitte le salon." << endl;
+    //cout << "Client " << id << " quitte le salon." << endl;
 }
 
 int main() {
