@@ -12,65 +12,60 @@ using namespace std;
 
 // Mutex et condition variables pour la synchronisation
 mutex mtx;
-condition_variable employe_cv;   // Pour signaler le barbier
-condition_variable voiture_cv;  // Pour signaler le client
+condition_variable employe_cv;   // Pour signaler les employés
+condition_variable voiture_cv;   // Pour signaler les voitures
 
-// Indicateurs pour gérer l'état du barbier et des clients
-bool employeSleeping = true; // État du barbier (dormant ou éveillé)
-queue<int> waitingVoitures; // File d'attente pour les clients
-bool voitureDone = false;   // Indique si le client a terminé
-int currentVoitureId = -1;  // Identifiant du client en cours
-vector<int> servedVoitures;  // Vecteur pour garder une trace des clients déjà servis
-const int maxVoitures = 6;   // Maximum de clients dans le employeshop
+// Indicateurs pour gérer l'état des employés et des clients
+queue<int> waitingVoitures;  // File d'attente pour les voitures
+vector<int> servedVoitures;  // Vecteur pour garder une trace des voitures déjà servies
+const int maxVoitures = 6;   // Maximum de voitures dans le drive
 
-void balk(int id){
+// Nombre d'employés
+const int numEmployes = 1;
+bool employeSleeping[numEmployes];  // État des employés (dormant ou éveillé)
+
+void balk(int id) {
     cout << "La voiture " << id << " ne peut pas entrer dans le drive, la file est pleine (balk)." << endl;
 }
 
-void wakeUpEmploye(int id){
-    cout << "La voiture " << id << " sonne à la borne." << endl;
+void wakeUpEmploye(int id, int employeId) {
+    cout << "La voiture " << id << " appelle l'employé " << employeId << " qui était en cuisine." << endl;
 }
 
-void sleepEmploye(){
-    cout << "L'employé retourne en cuisine car il n'y a plus de voitures." << endl;
-
+void sleepEmploye(int employeId) {
+    cout << "L'employé " << employeId << " retourne en cuisine car il n'y a plus de voitures." << endl;
 }
 
-void employe() {
+void employe(int employeId) {
     while (true) {
         unique_lock<mutex> lock(mtx);
 
-        // Attendre qu'il y ait des clients dans la file d'attente
+        // Attendre qu'il y ait des voitures dans la file d'attente
         employe_cv.wait(lock, [] { return !waitingVoitures.empty(); });
 
-        // l'employé est de retour à la borne et peut donner la commande
-        currentVoitureId = waitingVoitures.front(); // Servir la première voiture
-        waitingVoitures.pop(); // Retirer la première voiture de la file d'attente
+        // L'employé prend une voiture de la file s'il y en a
+        if (!waitingVoitures.empty()) {
+            int currentVoitureId = waitingVoitures.front(); // Servir la première voiture
+            waitingVoitures.pop();  // Retirer la première voiture de la file d'attente
 
-        cout << "L'employé dit à la voiture " << currentVoitureId << " de s'avancer pour récupérer la commande." << endl;
+            cout << "L'employé " << employeId << " dit à la voiture " << currentVoitureId << " de s'avancer pour récupérer la commande." << endl;
 
-        // Signaler à la voiture qu'il peut récupérer sa commande
-        voiture_cv.notify_one();
+            // Simuler la prise de commande
+            voiture_cv.notify_one(); // Signaler à la voiture de s'avancer
+            cout << "L'employé " << employeId << " tend la commande à la voiture " << currentVoitureId << "." << endl;
+            this_thread::sleep_for(chrono::seconds(2)); // Simuler le temps de la commande
 
-        cout << "L'employé tend la commande à la voiture " << currentVoitureId << "." << endl;
-        this_thread::sleep_for(chrono::seconds(2)); // Simuler le temps de la commande
+            cout << "L'employé " << employeId << " a donné la commande à la voiture " << currentVoitureId << "." << endl;
+            cout << "L'employé " << employeId << " dit à la voiture " << currentVoitureId << " de partir." << endl;
 
-        cout << "L'employé a donné la commande à la voiture " << currentVoitureId << "." << endl;
+            // Ajouter la voiture aux voitures servies
+            servedVoitures.push_back(currentVoitureId);
 
-        // Indique que la voiture peut partir
-        voitureDone = true;
-        cout << "L'employé dit à la voiture " << currentVoitureId << " de partir." << endl;
-
-        // Réinitialiser l'indicateur pour indiquer que la commande est finie
-        voitureDone = false;
-
-        if (waitingVoitures.empty()) {
-            employeSleeping = true;
-            sleepEmploye();
+            if (waitingVoitures.empty()) {
+                employeSleeping[employeId] = true;  // L'employé retourne en cuisine
+                sleepEmploye(employeId);
+            }
         }
-
-        // Signaler à la voiture que la commande est récupérée
-        voiture_cv.notify_all();
     }
 }
 
@@ -83,43 +78,41 @@ void voiture(int id) {
             return;
         }
 
-        cout << "Voiture" << id << " entre dans la file du drive." << endl;
+        cout << "Voiture " << id << " entre dans la file du drive." << endl;
 
         waitingVoitures.push(id); // Ajouter la voiture à la file
 
-        // Rappeler l'employé à la borne
-        if (employeSleeping) {
-            wakeUpEmploye(id);
-            employeSleeping = false;
-            employe_cv.notify_one(); // Signaler à l'employé  qu'il y a une voiture
+        // Rappeler un employé s'il y a une voiture dans la file
+        for (int i = 0; i < numEmployes; ++i) {
+            if (employeSleeping[i]) {
+                wakeUpEmploye(id, i);
+                employeSleeping[i] = false;
+                employe_cv.notify_all(); // Signaler aux employés qu'il y a des voitures
+                break;
+            }
         }
     }
 
     // Attendre que l'employé lui dise de s'avancer
     {
         unique_lock<mutex> lock(mtx);
-        while (currentVoitureId != id) {
-            voiture_cv.wait(lock); // Attendre que l'employé lui signale d'avancer
-        }
+        voiture_cv.wait(lock); // Attendre que l'employé lui signale d'avancer
     }
 
-    // Attendre que l'employé donne la commande
-    {
-        unique_lock<mutex> lock(mtx);
-        while (!voitureDone) {
-            voiture_cv.wait(lock); // Attendre que l'employé signale qui la donné la commande
-        }
-    }
-
-    servedVoitures.push_back(id);
-    //cout << "Voiture " << id << " quitte le drive." << endl;
+    // Voiture a été servie
 }
 
 int main() {
+    // Initialiser les employés comme étant tous en cuisine
+    fill(begin(employeSleeping), end(employeSleeping), true);
 
-    thread employeThread(employe);
+    // Créer et lancer des threads pour chaque employé
+    vector<thread> employeThreads;
+    for (int i = 0; i < numEmployes; ++i) {
+        employeThreads.push_back(thread(employe, i));
+    }
 
-
+    // Générer des voitures
     random_device rd;
     mt19937 gen(rd());
     uniform_int_distribution<> dis(1, 3);
@@ -134,5 +127,11 @@ int main() {
 
         this_thread::sleep_for(chrono::seconds(dis(gen))); // Attendre un temps aléatoire avant d'ajouter le prochain groupe de voitures
     }
+
+    // Rejoindre les threads des employés (ne sera pas atteint ici car la boucle est infinie)
+    for (auto& employeThread : employeThreads) {
+        employeThread.join();
+    }
+
     return 0;
 }
